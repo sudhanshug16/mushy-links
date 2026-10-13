@@ -63,7 +63,7 @@ def main():
         if os.name == 'nt':
             # Keep the disposable runner's persistent user PATH unchanged.
             command = ['pwsh', '-NoProfile', '-NonInteractive', '-Command',
-                       "$ErrorActionPreference='Stop'; $saved=[Environment]::GetEnvironmentVariable('Path','User'); try { if ($env:MUSHY_TEST_UNINSTALL) { [Environment]::SetEnvironmentVariable('Path',($env:MUSHY_INSTALL_DIR+';'+$saved),'User') }; . $env:MUSHY_TEST_INSTALLER; if ($env:MUSHY_TEST_UNINSTALL -and ([Environment]::GetEnvironmentVariable('Path','User') -split ';') -contains $env:MUSHY_INSTALL_DIR) { throw 'Uninstall retained persistent PATH entry' } } finally { [Environment]::SetEnvironmentVariable('Path',$saved,'User') }"]
+                       "$ErrorActionPreference='Stop'; $saved=[Environment]::GetEnvironmentVariable('Path','User'); try { if ($env:MUSHY_TEST_UNINSTALL) { [Environment]::SetEnvironmentVariable('Path',($env:MUSHY_INSTALL_DIR+';'+$saved),'User') }; . $env:MUSHY_TEST_INSTALLER; if ($env:MUSHY_TEST_UNINSTALL -and ([Environment]::GetEnvironmentVariable('Path','User') -split ';') -contains $env:MUSHY_INSTALL_DIR) { throw ('Uninstall retained persistent PATH entry: raw='+$env:MUSHY_INSTALL_DIR+' normalized='+$installDir+' remaining='+[Environment]::GetEnvironmentVariable('Path','User')) } } finally { [Environment]::SetEnvironmentVariable('Path',$saved,'User') }"]
             env['MUSHY_TEST_INSTALLER'] = str(REPO / 'install.ps1')
         else:
             command = ['sh', str(REPO / 'install.sh')]

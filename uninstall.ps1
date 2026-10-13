@@ -46,10 +46,17 @@ try {
         & $helper shell uninstall
     }
     if ($LASTEXITCODE -ne 0) { throw 'Could not remove shell setup; executables retained.' }
+    # Windows can spell the same directory with short (8.3) or full names.
+    $keepPath = {
+        if (!$_) { return $true }
+        try { $candidate = [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($_.Trim('"'))) }
+        catch { return $true }
+        $candidate.TrimEnd('\', '/') -ine $installDir.TrimEnd('\', '/')
+    }
     $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-    $kept = @($userPath -split ';' | Where-Object { $_.TrimEnd('\', '/') -ine $installDir.TrimEnd('\', '/') })
+    $kept = @($userPath -split ';' | Where-Object -FilterScript $keepPath)
     if (($kept -join ';') -ne $userPath) { [Environment]::SetEnvironmentVariable('Path', ($kept -join ';'), 'User') }
-    $env:Path = (@($env:Path -split ';' | Where-Object { $_.TrimEnd('\', '/') -ine $installDir.TrimEnd('\', '/') }) -join ';')
+    $env:Path = (@($env:Path -split ';' | Where-Object -FilterScript $keepPath) -join ';')
     foreach ($name in @('mushy.exe', 'mushy-askpass.exe', 'mushy-background.exe')) {
         $path = Join-Path $installDir $name
         if (Test-Path -LiteralPath $path -PathType Leaf) { Remove-Item -LiteralPath $path -Force }
