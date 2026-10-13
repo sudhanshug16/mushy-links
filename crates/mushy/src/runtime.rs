@@ -242,18 +242,22 @@ pub fn start() -> Result<()> {
     if fs::metadata(&log).is_ok_and(|m| m.len() > 2 * 1024 * 1024) {
         let _ = fs::rename(&log, s.dir.join("daemon.previous.log"));
     }
-    let out = fs::OpenOptions::new().create(true).append(true).open(log)?;
-    let mut c = Command::new(std::env::current_exe()?);
-    c.args(["daemon", "run"])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(out);
     #[cfg(windows)]
     {
-        use std::os::windows::process::CommandExt;
-        c.creation_flags(0x08000000);
+        // A detached daemon must not inherit any handles from an installer or
+        // another caller capturing output, including non-standard pipe handles.
+        crate::windows::spawn_background(&std::env::current_exe()?)?;
     }
-    c.spawn()?;
+    #[cfg(not(windows))]
+    {
+        let out = fs::OpenOptions::new().create(true).append(true).open(log)?;
+        let mut c = Command::new(std::env::current_exe()?);
+        c.args(["daemon", "run"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(out);
+        c.spawn()?;
+    }
     Ok(())
 }
 pub fn daemon() -> Result<()> {

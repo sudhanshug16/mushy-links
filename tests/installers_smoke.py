@@ -69,7 +69,8 @@ def main():
             for executable in executables:
                 assert shutil.which(executable), f'{executable} missing from native installer verification'
                 command[0] = executable
-                for _ in range(2):
+                for attempt in range(2):
+                    print(f'Checking {executable} installer, attempt {attempt + 1}', flush=True)
                     result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=60)
                     assert result.returncode == 0, result.stdout + result.stderr
             for name in names:

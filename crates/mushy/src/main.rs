@@ -1,6 +1,8 @@
 mod runtime;
 mod shell;
 mod transport;
+#[cfg(windows)]
+mod windows;
 use anyhow::{Context, Result, bail, ensure};
 use clap::{Parser, Subcommand};
 use mushy_core::{engine, model::*, scan, store::Store};
@@ -107,7 +109,10 @@ enum Config {
 }
 #[derive(Subcommand)]
 enum Daemon {
-    Run,
+    Run {
+        #[arg(long, hide = true)]
+        background: bool,
+    },
     Start,
     Stop,
     Install,
@@ -132,6 +137,15 @@ fn run() -> Result<()> {
     };
     if let Commands::Shell { command } = &cli.command {
         return shell::run(command);
+    }
+    #[cfg(windows)]
+    if matches!(
+        cli.command,
+        Commands::Daemon {
+            command: Daemon::Run { background: true }
+        }
+    ) {
+        windows::background_log(&runtime::state_dir()?)?;
     }
     if matches!(
         cli.command,
@@ -385,7 +399,7 @@ fn run() -> Result<()> {
             println!("Diagnostics passed.");
         }
         Commands::Daemon {
-            command: Daemon::Run,
+            command: Daemon::Run { .. },
         } => runtime::daemon()?,
         Commands::Daemon {
             command: Daemon::Start,
