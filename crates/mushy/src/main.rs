@@ -111,6 +111,7 @@ fn main() {
     }
 }
 fn run() -> Result<()> {
+    mushy_links::prepare_process()?;
     let cli = Cli::parse();
     if matches!(
         cli.command,

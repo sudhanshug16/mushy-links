@@ -1,6 +1,7 @@
 use std::io::{Read, Write};
 fn main() {
     let result = (|| -> anyhow::Result<()> {
+        mushy_links::prepare_process()?;
         let host = std::env::var("MUSHY_AUTH_HOST")?;
         let argument = std::env::args().nth(1).unwrap_or_default();
         let entry = keyring::Entry::new("mushy-links", &host)?;

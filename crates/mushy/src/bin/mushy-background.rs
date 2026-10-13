@@ -1,6 +1,7 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 fn main() {
     let result = (|| -> std::io::Result<()> {
+        mushy_links::prepare_process()?;
         let exe = std::env::current_exe()?.with_file_name(if cfg!(windows) {
             "mushy.exe"
         } else {

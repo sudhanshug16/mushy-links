@@ -12,6 +12,7 @@ import time
 
 
 def run(exe, *args, env, timeout=30):
+    print("Checking:", " ".join(args), flush=True)
     return subprocess.run(
         [str(exe), *args], env=env, check=True, capture_output=True,
         text=True, timeout=timeout,

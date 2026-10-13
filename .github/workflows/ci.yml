@@ -58,6 +58,7 @@ jobs:
         run: cargo test -p mushy-links --test credentials --locked -- --ignored
       - run: cargo build --workspace --release --locked
       - name: Native CLI, background helpers, and login startup
+        timeout-minutes: 3
         env:
           MUSHY_TEST_BIN: target/release/mushy
         run: python3 tests/native_smoke.py --startup
