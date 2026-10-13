@@ -93,7 +93,11 @@ LogLevel ERROR
                 return run([BIN, *args], env=env, timeout=30)
             print('SSH handshake and initial copy', flush=True)
             mushy('doctor', 'test-peer')
-            mushy('link', f'test-peer:{remote}', local, '--no-start')
+            shortcut = base / 'mushy-shell.sh'
+            shortcut.write_text(mushy('shell', 'env', 'bash').stdout)
+            run(['bash', '--noprofile', '--norc', '-c',
+                 '. "$1"; ln -m "$2" "$3" --no-start',
+                 'mushy-test', shortcut, f'test-peer:{remote}', local], env=env, timeout=30)
             assert (local / 'hello.txt').read_text() == 'seed'
             assert (local / 'sub/data.bin').read_bytes() == (remote / 'sub/data.bin').read_bytes()
             assert (local / 'alias').is_symlink()

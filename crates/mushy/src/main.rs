@@ -1,9 +1,11 @@
 mod runtime;
+mod shell;
 mod transport;
 use anyhow::{Context, Result, bail, ensure};
 use clap::{Parser, Subcommand};
 use mushy_core::{engine, model::*, scan, store::Store};
 use std::{
+    ffi::OsString,
     fs,
     path::{Path, PathBuf},
 };
@@ -12,7 +14,7 @@ use std::{
 #[command(
     name = "mushy",
     version,
-    about = "Automatic, recoverable file synchronization over SSH"
+    about = "Soft links across devices, backed by automatic SSH sync"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -20,6 +22,16 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Commands {
+    /// The ln -m shortcut for linking files across devices.
+    Ln {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true, num_args = 1..)]
+        args: Vec<OsString>,
+    },
+    /// Set up the ln -m shortcut in your shell.
+    Shell {
+        #[command(subcommand)]
+        command: shell::ShellCommand,
+    },
     /// Link a remote file or directory. A new local destination must be absent or empty.
     Link {
         /// user@host:/path, or local destination when using --host and --remote-path.
@@ -112,7 +124,15 @@ fn main() {
 }
 fn run() -> Result<()> {
     mushy_links::prepare_process()?;
-    let cli = Cli::parse();
+    let cli = match Cli::parse() {
+        Cli {
+            command: Commands::Ln { args },
+        } => Cli::parse_from(shell::link_args(args)?),
+        cli => cli,
+    };
+    if let Commands::Shell { command } = &cli.command {
+        return shell::run(command);
+    }
     if matches!(
         cli.command,
         Commands::Internal {
@@ -124,6 +144,7 @@ fn run() -> Result<()> {
     let pause_requested = matches!(cli.command, Commands::Pause { .. });
     let store = runtime::store()?;
     match cli.command {
+        Commands::Ln { .. } | Commands::Shell { .. } => unreachable!(),
         Commands::Link {
             source,
             destination,
