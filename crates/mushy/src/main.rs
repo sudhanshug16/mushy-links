@@ -116,6 +116,8 @@ enum Daemon {
     Start,
     Stop,
     Install,
+    /// Remove login startup and wait for the daemon to stop; retain files and history.
+    Uninstall,
 }
 #[derive(Subcommand)]
 enum Internal {
@@ -137,6 +139,17 @@ fn run() -> Result<()> {
     };
     if let Commands::Shell { command } = &cli.command {
         return shell::run(command);
+    }
+    if matches!(
+        cli.command,
+        Commands::Daemon {
+            command: Daemon::Uninstall
+        }
+    ) {
+        runtime::uninstall_startup()?;
+        runtime::stop_and_wait()?;
+        println!("Removed login startup and stopped syncing. Files and history retained.");
+        return Ok(());
     }
     #[cfg(windows)]
     if matches!(
@@ -416,7 +429,10 @@ fn run() -> Result<()> {
             runtime::install_startup()?;
             runtime::start()?;
         }
-        Commands::Internal { .. } => unreachable!(),
+        Commands::Internal { .. }
+        | Commands::Daemon {
+            command: Daemon::Uninstall,
+        } => unreachable!(),
     }
     Ok(())
 }

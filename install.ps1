@@ -1,6 +1,6 @@
 # Install mushy and ln -m in the current user's PowerShell profile.
 $ErrorActionPreference = 'Stop'
-$version = if ($env:MUSHY_VERSION) { $env:MUSHY_VERSION } else { 'v0.1.1' }
+$version = if ($env:MUSHY_VERSION) { $env:MUSHY_VERSION } else { 'v0.1.2' }
 $releaseBase = if ($env:MUSHY_RELEASE_BASE_URL) { $env:MUSHY_RELEASE_BASE_URL.TrimEnd('/') } else { "https://github.com/sudhanshug16/mushy-links/releases/download/$version" }
 $installDir = if ($env:MUSHY_INSTALL_DIR) { $env:MUSHY_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA 'mushy\bin' }
 $selectedShell = if ($env:MUSHY_SHELL) { $env:MUSHY_SHELL } else { 'powershell' }

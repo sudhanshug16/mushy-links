@@ -70,6 +70,21 @@ def check_startup(exe, env):
             else:
                 subprocess.run(["desktop-file-validate", str(startup)], check=True)
         check_daemon(exe, native)
+        run(exe, "daemon", "uninstall", env=native)
+        run(exe, "daemon", "uninstall", env=native)
+        if startup:
+            assert not startup.exists()
+        if os.name == 'nt':
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                               r"Software\Microsoft\Windows\CurrentVersion\Run") as key:
+                try:
+                    winreg.QueryValueEx(key, 'MushyLinks')
+                except FileNotFoundError:
+                    pass
+                else:
+                    raise AssertionError('login registry value survived uninstall')
+        elif domains:
+            assert all(subprocess.run(['launchctl', 'print', domain], capture_output=True).returncode != 0 for domain in domains)
         print("PASS: native login startup registration and daemon launch", flush=True)
     finally:
         if os.name == "nt":
@@ -119,8 +134,7 @@ def main():
             subprocess.run([str(launcher)], env=env, check=True, timeout=30)
             print("PASS: native CLI, config, and background helpers from a path with spaces", flush=True)
         finally:
-            run(exe, "daemon", "stop", env=env)
-            time.sleep(1)
+            run(exe, "daemon", "uninstall", env=env)
         if args.startup:
             check_startup(exe, env)
 

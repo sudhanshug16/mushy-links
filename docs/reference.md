@@ -360,3 +360,51 @@ python3 tests/installers_smoke.py
 CI executes the wrappers in Bash, Zsh, Fish, and PowerShell, verifies argument
 preservation and native `ln` passthrough, and checks install/upgrade and checksum
 rejection. The real SSH test also exercises initial linking through `ln -m`.
+
+## Uninstall
+
+The README's uninstall command removes this device's installation. It disables
+login startup before waiting for the daemon to exit, strips only mushy's marked
+shell blocks, and removes the three executables. It never recursively deletes
+your installation directory or modifies linked files. Profile backups remain.
+Windows also removes the installation directory from the persistent user PATH.
+For releases before v0.1.2, the scripts download a temporary checksum-verified
+cleanup helper; they do not upgrade the installation. The component commands
+below are available starting with v0.1.2.
+
+By default, shell cleanup checks Bash's `.bashrc` and all three login profiles,
+Zsh's `.zshenv`/`.zshrc`, and Fish's `config.fish`. On Windows it also checks both
+PowerShell and Windows PowerShell's current-user-all-hosts profiles. Missing
+profiles and profiles without mushy blocks are left untouched. `ZDOTDIR` and
+`XDG_CONFIG_HOME` select the same locations as during installation. Custom shell
+setup outside these files must be removed where you added it.
+
+For custom installations, set `MUSHY_INSTALL_DIR` and/or `MUSHY_RC_FILE` to the
+same values used when installing; `MUSHY_SHELL` selects the custom profile's
+shell. For example, in Bash/Zsh:
+
+```sh
+export MUSHY_INSTALL_DIR="$HOME/tools/mushy"
+export MUSHY_RC_FILE="$HOME/custom-bashrc"
+export MUSHY_SHELL=bash
+curl -fsSL https://github.com/sudhanshug16/mushy-links/releases/latest/download/uninstall.sh | sh
+```
+
+You can also remove components separately, while mushy is still installed:
+
+```sh
+mushy shell uninstall                   # Remove all default shell setup
+mushy shell uninstall zsh               # Remove only Zsh setup
+mushy shell uninstall bash --rc-file ./custom-bashrc
+mushy daemon uninstall                  # Remove login startup and stop syncing
+```
+
+Sync registrations, local files, recovery history, and OS-stored SSH passwords
+remain. After reinstalling, `mushy daemon install` can resume the registered links.
+To detach a link permanently,
+run `mushy unlink LOCAL` before uninstalling. To forget a saved password, run
+`mushy auth forget HOST` before removing the credential helper. Other devices are
+unaffected. Uninstall never sends file deletions to peers.
+
+Like startup installation, `mushy daemon uninstall` skips real login configuration
+when `MUSHY_STATE_DIR` is set and stops only that isolated state's daemon.

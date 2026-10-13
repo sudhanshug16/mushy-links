@@ -25,6 +25,13 @@ pub enum ShellCommand {
         #[arg(long)]
         rc_file: Option<PathBuf>,
     },
+    /// Remove mushy's marked setup, preserving the rest of your profiles.
+    Uninstall {
+        /// Omit to clean all supported default shell profiles.
+        shell: Option<Shell>,
+        #[arg(long)]
+        rc_file: Option<PathBuf>,
+    },
     /// Print the shell setup for immediate use or a custom configuration.
     Env { shell: Shell },
 }
@@ -60,6 +67,49 @@ pub fn run(command: &ShellCommand) -> Result<()> {
             }
             println!("Open a new terminal, then use: ln -m HOST:/path ./local");
             println!("Ordinary ln commands keep using your system's ln.");
+        }
+        ShellCommand::Uninstall { shell, rc_file } => {
+            let home = directories::UserDirs::new()
+                .context("cannot find your home directory")?
+                .home_dir()
+                .to_owned();
+            let files = if let Some(path) = rc_file {
+                let shell = shell.map(Ok).unwrap_or_else(detect)?;
+                vec![(path.clone(), matches!(shell, Shell::Powershell))]
+            } else {
+                let shells = shell.map(|s| vec![s]).unwrap_or_else(|| {
+                    let mut all = vec![Shell::Bash, Shell::Zsh, Shell::Fish];
+                    if cfg!(windows) {
+                        all.push(Shell::Powershell);
+                    }
+                    all
+                });
+                let mut files = Vec::new();
+                for shell in shells {
+                    for (path, _, _) in profiles(shell, &home)? {
+                        files.push((path, matches!(shell, Shell::Powershell)));
+                    }
+                    // A user may have changed login profiles since installation.
+                    if matches!(shell, Shell::Bash) {
+                        for name in [".bash_profile", ".bash_login", ".profile"] {
+                            files.push((home.join(name), false));
+                        }
+                    }
+                    if matches!(shell, Shell::Powershell) {
+                        let documents = directories::UserDirs::new()
+                            .and_then(|u| u.document_dir().map(Path::to_owned))
+                            .context("cannot find your Documents directory; use --rc-file")?;
+                        files.push((documents.join("WindowsPowerShell/profile.ps1"), true));
+                    }
+                }
+                files
+            };
+            for (file, powershell) in files {
+                if file.exists() {
+                    update_profile(&file, None, None, powershell)?;
+                }
+            }
+            println!("Removed mushy's shell setup. Open a new terminal.");
         }
     }
     Ok(())
@@ -332,6 +382,15 @@ fn update_profile(
         Err(e) => return Err(e).context("cannot read the shell profile"),
     };
     let (text, encoding) = decode_profile(original.as_deref().unwrap_or_default(), powershell)?;
+    // Uninstall must neither create absent profiles nor rewrite unrelated files.
+    if code.is_none()
+        && function.is_none()
+        && !text
+            .lines()
+            .any(|line| matches!(line, PATH_START | PATH_END | LN_START | LN_END))
+    {
+        return Ok(());
+    }
     let updated = encode_profile(&managed_content(&text, code, function)?, encoding);
     if original.as_deref() == Some(&updated) {
         return Ok(());
@@ -436,6 +495,36 @@ mod tests {
         assert!(fs::read_to_string(rc).unwrap().contains("# original\n"));
     }
     #[test]
+    fn uninstall_keeps_later_edits_and_leaves_unrelated_profiles_untouched() {
+        let tmp = tempfile::tempdir().unwrap();
+        let rc = tmp.path().join("profile");
+        fs::write(&rc, "# original\n").unwrap();
+        update_profile(
+            &rc,
+            Some("PATH=test\n"),
+            Some(function_code(Shell::Bash)),
+            false,
+        )
+        .unwrap();
+        let mut installed = fs::read_to_string(&rc).unwrap();
+        installed.push_str("# added after installation\n");
+        fs::write(&rc, installed).unwrap();
+        update_profile(&rc, None, None, false).unwrap();
+        assert_eq!(
+            fs::read_to_string(&rc).unwrap(),
+            "# original\n# added after installation\n"
+        );
+        update_profile(&rc, None, None, false).unwrap();
+        let absent = tmp.path().join("absent");
+        update_profile(&absent, None, None, false).unwrap();
+        assert!(!absent.exists());
+        let ps = tmp.path().join("unrelated.ps1");
+        fs::write(&ps, "# no BOM or mushy setup\n").unwrap();
+        update_profile(&ps, None, None, true).unwrap();
+        assert_eq!(fs::read(&ps).unwrap(), b"# no BOM or mushy setup\n");
+        assert!(!tmp.path().join("unrelated.ps1.mushy.bak").exists());
+    }
+    #[test]
     fn powershell_profiles_preserve_utf16_and_back_up_original_bytes() {
         let tmp = tempfile::tempdir().unwrap();
         let rc = tmp.path().join("profile.ps1");
@@ -468,6 +557,8 @@ mod tests {
         )
         .unwrap();
         assert_eq!(fs::read(&rc).unwrap(), saved);
+        update_profile(&rc, None, None, true).unwrap();
+        assert_eq!(fs::read(&rc).unwrap(), original);
     }
     #[cfg(unix)]
     #[test]
@@ -480,6 +571,9 @@ mod tests {
         update_profile(&rc, Some("PATH=test\n"), None, false).unwrap();
         assert!(fs::symlink_metadata(&rc).unwrap().file_type().is_symlink());
         assert!(fs::read_to_string(target).unwrap().contains("# original\n"));
+        update_profile(&rc, None, None, false).unwrap();
+        assert!(fs::symlink_metadata(&rc).unwrap().file_type().is_symlink());
+        assert_eq!(fs::read_to_string(&rc).unwrap(), "# original\n");
     }
     #[test]
     fn ln_arguments_preserve_spaces_and_double_dash() {

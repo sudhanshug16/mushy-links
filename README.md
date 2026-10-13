@@ -22,6 +22,8 @@ curl -fsSL https://github.com/sudhanshug16/mushy-links/releases/latest/download/
 ```
 
 Open a new terminal after installing. Bash, Zsh, and Fish are supported.
+The installer uses your login shell; to set up another installed shell, run
+`mushy shell install zsh` (or `bash` or `fish`).
 
 <details>
 <summary>Windows — PowerShell</summary>
@@ -77,3 +79,28 @@ SSH keys and agents work as usual. To use an SSH password, run
 
 For limits, recovery commands, shell setup, manual installation, and platform
 restrictions, see the [reference](docs/reference.md).
+
+## Uninstall
+
+Run this on each device you want to stop syncing:
+
+```sh
+curl -fsSL https://github.com/sudhanshug16/mushy-links/releases/latest/download/uninstall.sh | sh
+```
+
+<details>
+<summary>Windows — PowerShell</summary>
+
+```powershell
+irm https://github.com/sudhanshug16/mushy-links/releases/latest/download/uninstall.ps1 | iex
+```
+
+</details>
+
+This removes login startup, stops syncing, removes the `ln -m` shell setup, and
+deletes mushy's executables. Open a new terminal afterward. **Your local linked
+files and recovery history stay on disk.** Other devices keep their links.
+
+Saved SSH passwords stay in your OS credential store. To remove one, run
+`mushy auth forget HOST` before uninstalling. For custom installation paths and
+profiles, see [uninstall options](docs/reference.md#uninstall).

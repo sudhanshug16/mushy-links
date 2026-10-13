@@ -1,7 +1,7 @@
 #!/bin/sh
 # Install mushy and the ln -m shortcut without administrator privileges.
 set -eu
-MUSHY_VERSION=${MUSHY_VERSION:-v0.1.1}
+MUSHY_VERSION=${MUSHY_VERSION:-v0.1.2}
 release_base=${MUSHY_RELEASE_BASE_URL:-https://github.com/sudhanshug16/mushy-links/releases/download/$MUSHY_VERSION}
 bin_dir=${MUSHY_INSTALL_DIR:-"$HOME/.local/bin"}
 fail() { printf 'mushy: %s\n' "$*" >&2; exit 1; }

@@ -260,6 +260,130 @@ pub fn start() -> Result<()> {
     }
     Ok(())
 }
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn remove_if_present(path: &Path) -> Result<()> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e).with_context(|| format!("cannot remove {}", path.display())),
+    }
+}
+
+/// Match installation's isolation rule: custom state never changes login startup.
+pub fn uninstall_startup() -> Result<()> {
+    if std::env::var_os("MUSHY_STATE_DIR").is_some() {
+        return Ok(());
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let home = std::env::var_os("HOME").context("HOME unavailable")?;
+        let config = std::env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .unwrap_or(PathBuf::from(home).join(".config"));
+        let service = config.join("systemd/user/mushy.service");
+        let manager_available = Command::new("systemctl")
+            .args(["--user", "show-environment"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|s| s.success());
+        if service.exists()
+            && manager_available
+            && !Command::new("systemctl")
+                .args(["--user", "disable", "--now", "mushy.service"])
+                .status()?
+                .success()
+        {
+            bail!("cannot disable mushy's user service; executables retained");
+        }
+        remove_if_present(&config.join("systemd/user/default.target.wants/mushy.service"))?;
+        remove_if_present(&service)?;
+        remove_if_present(&config.join("autostart/mushy.desktop"))?;
+        if manager_available
+            && !Command::new("systemctl")
+                .args(["--user", "daemon-reload"])
+                .status()?
+                .success()
+        {
+            bail!("cannot reload user services");
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let home = PathBuf::from(std::env::var_os("HOME").context("HOME unavailable")?);
+        let uid = Command::new("id").arg("-u").output()?;
+        if !uid.status.success() {
+            bail!("cannot determine login user ID");
+        }
+        let uid = String::from_utf8(uid.stdout)?.trim().to_owned();
+        for domain in [
+            format!("gui/{uid}/dev.mushy.links"),
+            format!("user/{uid}/dev.mushy.links"),
+        ] {
+            if Command::new("launchctl")
+                .args(["print", &domain])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()?
+                .success()
+                && !Command::new("launchctl")
+                    .args(["bootout", &domain])
+                    .status()?
+                    .success()
+            {
+                bail!("cannot unload mushy's login agent; executables retained");
+            }
+        }
+        remove_if_present(&home.join("Library/LaunchAgents/dev.mushy.links.plist"))?;
+    }
+    #[cfg(windows)]
+    {
+        let key = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
+        if Command::new("reg")
+            .args(["query", key, "/v", "MushyLinks"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()?
+            .success()
+            && !Command::new("reg")
+                .args(["delete", key, "/v", "MushyLinks", "/f"])
+                .status()?
+                .success()
+        {
+            bail!("cannot remove mushy's login startup; executables retained");
+        }
+    }
+    Ok(())
+}
+
+pub fn stop_and_wait() -> Result<()> {
+    let dir = state_dir()?;
+    if !dir.exists() {
+        return Ok(());
+    }
+    fs::write(dir.join("daemon.stop"), b"stop")?;
+    let lock = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(dir.join("daemon.lock"))?;
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        match fs2::FileExt::try_lock_exclusive(&lock) {
+            Ok(()) => {
+                fs2::FileExt::unlock(&lock)?;
+                return Ok(());
+            }
+            Err(e) if e.raw_os_error() == fs2::lock_contended_error().raw_os_error() => (),
+            Err(e) => return Err(e).context("cannot check daemon shutdown"),
+        }
+        if Instant::now() >= deadline {
+            bail!("daemon is still stopping; executables retained. Wait and rerun uninstall");
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
 pub fn daemon() -> Result<()> {
     let s = store()?;
     let lock = fs::OpenOptions::new()
