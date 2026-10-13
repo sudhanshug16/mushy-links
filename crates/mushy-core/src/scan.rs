@@ -323,11 +323,12 @@ impl Scanner<'_> {
             let directory = resolved_directory.unwrap_or(false);
             #[cfg(windows)]
             let directory = {
-                use cap_std::fs::FileTypeExt;
+                use cap_std::fs::MetadataExt;
+                use windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_DIRECTORY;
                 let _ = resolved_directory;
                 // Windows records the link's type even after its target is
                 // deleted. Preserve it so dangling links do not block deletes.
-                meta.file_type().is_symlink_dir()
+                meta.file_attributes() & FILE_ATTRIBUTE_DIRECTORY != 0
             };
             Kind::Symlink { target, directory }
         } else if meta.is_dir() {
