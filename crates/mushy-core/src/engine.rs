@@ -18,7 +18,7 @@ pub fn observe(store: &Store, root: &Root) -> Result<Snapshot> {
         bail!("link is paused");
     }
     let snapshot = scan::scan(store, root, true)?;
-    let tx = store.db.unchecked_transaction()?;
+    let tx = store.write_transaction()?;
     let device = store.device()?;
     let mut clock = store.clock(&root.group)?;
     // A filesystem mutation may have committed immediately before a crash.
@@ -485,10 +485,13 @@ fn apply_one(store: &Store, dir: &Dir, path: &str, entry: &Entry) -> Result<()> 
             }
             #[cfg(windows)]
             {
+                // Wire targets use '/', but Windows reparse-point targets
+                // need native separators to work with ordinary applications.
+                let target = target.replace('/', "\\");
                 if *directory {
-                    dir.symlink_dir(target, &temp)?;
+                    dir.symlink_dir(&target, &temp)?;
                 } else {
-                    dir.symlink_file(target, &temp)?;
+                    dir.symlink_file(&target, &temp)?;
                 }
             }
             if let Err(e) = dir.rename(&temp, dir, path) {

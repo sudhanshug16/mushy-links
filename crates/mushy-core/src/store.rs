@@ -1,7 +1,7 @@
 use crate::model::*;
 use anyhow::{Context, Result, bail};
 use fs2::FileExt;
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs::{self, File, OpenOptions},
@@ -62,6 +62,12 @@ impl Store {
             .open(self.dir.join("operation.lock"))?;
         f.lock_exclusive()?;
         Ok(Guard(f))
+    }
+    pub fn write_transaction(&self) -> rusqlite::Result<Transaction<'_>> {
+        // Status updates use other connections without the operation lock.
+        // Acquire SQLite's writer reservation before any transactional read,
+        // avoiding a deferred snapshot upgrade racing those updates in WAL.
+        Transaction::new_unchecked(&self.db, TransactionBehavior::Immediate)
     }
     pub fn device(&self) -> Result<String> {
         Ok(self
@@ -139,12 +145,12 @@ impl Store {
         self.json_rows("SELECT value FROM archives", [])
     }
     pub fn unlink(&self, root: &Root) -> Result<()> {
+        let tx = self.write_transaction()?;
         for c in self.applied(&root.id)?.values() {
             if let Some(hash) = c.entry.kind.hash() {
                 self.record_blob(hash, c.entry.kind.size())?;
             }
         }
-        let tx = self.db.unchecked_transaction()?;
         for e in self.edges()?.into_iter().filter(|e| e.root == root.id) {
             tx.execute("DELETE FROM edges WHERE id=?1", [e.id])?;
         }
@@ -216,7 +222,7 @@ impl Store {
         for c in changes {
             c.validate(group)?;
         }
-        let tx = self.db.unchecked_transaction()?;
+        let tx = self.write_transaction()?;
         for c in changes {
             self.append(c)?;
         }
@@ -230,7 +236,7 @@ impl Store {
     }
     pub fn remember(&self, root: &str, change: &Change) -> Result<()> {
         let tx = if self.db.is_autocommit() {
-            Some(self.db.unchecked_transaction()?)
+            Some(self.write_transaction()?)
         } else {
             None
         };

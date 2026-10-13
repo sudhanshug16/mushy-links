@@ -684,6 +684,57 @@ fn replaced_file_root_parent_does_not_generate_a_deletion() {
     assert_eq!(a.events().len(), 1);
 }
 
+#[test]
+fn unlink_survives_concurrent_background_status_updates() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+        mpsc,
+    };
+    let a = Device::new();
+    a.write("x", "recoverable");
+    let background = Store::open(&a.store.dir).unwrap();
+    let stop = Arc::new(AtomicBool::new(false));
+    let finished = stop.clone();
+    let (ready, started) = mpsc::channel();
+    let worker = std::thread::spawn(move || {
+        background.status("background", "syncing", "").unwrap();
+        ready.send(()).unwrap();
+        while !finished.load(Ordering::Acquire) {
+            background.status("background", "up_to_date", "").unwrap();
+            std::thread::yield_now();
+        }
+    });
+    started.recv().unwrap();
+    let result: anyhow::Result<()> = (|| {
+        for _ in 0..24 {
+            let _guard = a.store.lock()?;
+            a.store.save_root(&a.root)?;
+            a.store.save_edge(&Edge {
+                id: "edge".into(),
+                root: a.root.id.clone(),
+                host: "test-peer".into(),
+                remote_path: "/remote".into(),
+            })?;
+            engine::observe(&a.store, &a.root)?;
+            a.store.unlink(&a.root)?;
+        }
+        Ok(())
+    })();
+    stop.store(true, Ordering::Release);
+    worker.join().unwrap();
+    result.unwrap();
+    assert!(a.store.roots().unwrap().is_empty());
+    assert!(a.store.edges().unwrap().is_empty());
+    assert_eq!(a.read("x"), "recoverable");
+    assert!(a.events().iter().all(|c| {
+        a.store
+            .object(c.entry.kind.hash().unwrap())
+            .unwrap()
+            .exists()
+    }));
+}
+
 #[cfg(windows)]
 #[test]
 fn windows_file_and_directory_symlinks_roundtrip() {
@@ -691,7 +742,7 @@ fn windows_file_and_directory_symlinks_roundtrip() {
     let b = Device::new();
     a.write("target/file", "first");
     let root = std::path::Path::new(&a.root.path);
-    std::os::windows::fs::symlink_file("target/file", root.join("file-link")).unwrap();
+    std::os::windows::fs::symlink_file(r"target\file", root.join("file-link")).unwrap();
     std::os::windows::fs::symlink_dir("target", root.join("directory-link")).unwrap();
     a.observe();
     b.merge(&a);

@@ -17,7 +17,12 @@ REPO = Path(__file__).resolve().parents[1]
 BIN = Path(os.environ.get('MUSHY_TEST_BIN', REPO / 'target/debug/mushy')).resolve()
 
 def run(argv, **kw):
-    return subprocess.run([str(x) for x in argv], check=True, capture_output=True, text=True, **kw)
+    try:
+        return subprocess.run([str(x) for x in argv], check=True, capture_output=True, text=True, **kw)
+    except subprocess.CalledProcessError as error:
+        print(error.stdout, file=sys.stderr)
+        print(error.stderr, file=sys.stderr)
+        raise
 
 def wait_for(check, detail, timeout=20):
     end = time.monotonic() + timeout
