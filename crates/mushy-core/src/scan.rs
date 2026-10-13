@@ -310,21 +310,25 @@ impl Scanner<'_> {
             #[cfg(target_os = "macos")]
             let target = canonical_unicode(&target);
             validate_target(key, &target)?;
-            let directory = match self.dir.metadata(relative) {
-                Ok(m) => m.is_dir(),
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+            let resolved_directory = match self.dir.metadata(relative) {
+                Ok(m) => Some(m.is_dir()),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
                 Err(e) => {
                     return Err(e).context(format!(
                         "symlink {key} cannot be resolved safely inside this root"
                     ));
                 }
             };
+            #[cfg(not(windows))]
+            let directory = resolved_directory.unwrap_or(false);
             #[cfg(windows)]
-            {
-                if self.dir.metadata(relative).is_err() {
-                    bail!("dangling symlink target type is unknown: {key}");
-                }
-            }
+            let directory = {
+                use cap_std::fs::FileTypeExt;
+                let _ = resolved_directory;
+                // Windows records the link's type even after its target is
+                // deleted. Preserve it so dangling links do not block deletes.
+                meta.file_type().is_symlink_dir()
+            };
             Kind::Symlink { target, directory }
         } else if meta.is_dir() {
             Kind::Directory

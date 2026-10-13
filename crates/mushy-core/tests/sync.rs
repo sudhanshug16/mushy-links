@@ -703,6 +703,21 @@ fn windows_file_and_directory_symlinks_roundtrip() {
     a.observe();
     b.merge(&a);
     assert_eq!(b.read("file-link"), "second");
+    fs::remove_dir_all(root.join("target")).unwrap();
+    a.observe();
+    b.merge(&a);
+    b.observe();
+    assert_eq!(a.events().len(), b.events().len());
+    assert!(
+        fs::symlink_metadata(std::path::Path::new(&b.root.path).join("directory-link"))
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    a.write("target/file", "restored target");
+    a.observe();
+    b.merge(&a);
+    assert_eq!(b.read("directory-link/file"), "restored target");
     fs::remove_file(root.join("file-link")).unwrap();
     fs::remove_dir(root.join("directory-link")).unwrap();
     a.observe();

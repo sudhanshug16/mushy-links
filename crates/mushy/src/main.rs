@@ -543,6 +543,16 @@ fn link(
     println!("Linked {} ↔ {}:{}", path.display(), host, remote.path);
     Ok(())
 }
+#[cfg(windows)]
+fn preflight_windows_symlink(parent: &Path) -> Result<()> {
+    let dir = tempfile::tempdir_in(parent)?;
+    fs::write(dir.path().join("target"), b"")?;
+    std::os::windows::fs::symlink_file("target", dir.path().join("link")).context(
+        "Windows cannot create symlinks here; enable Developer Mode or grant symlink privilege",
+    )?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -556,14 +566,4 @@ mod tests {
         assert!(parse_source("host;touch:/a").is_err());
         assert_eq!(parse_source("[::1]:/a").unwrap().0, "[::1]");
     }
-}
-
-#[cfg(windows)]
-fn preflight_windows_symlink(parent: &Path) -> Result<()> {
-    let dir = tempfile::tempdir_in(parent)?;
-    fs::write(dir.path().join("target"), b"")?;
-    std::os::windows::fs::symlink_file("target", dir.path().join("link")).context(
-        "Windows cannot create symlinks here; enable Developer Mode or grant symlink privilege",
-    )?;
-    Ok(())
 }
