@@ -20,7 +20,11 @@ try {
     $entries = @($checksums -split '\r?\n' | Where-Object { $_ -match ('^[0-9a-f]{64}  ' + [regex]::Escape($asset) + '$') })
     if ($entries.Count -ne 1) { throw 'The release checksum is missing or invalid.' }
     $expected = $entries[0].Substring(0, 64)
-    if ((Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLowerInvariant() -ne $expected) { throw 'Download checksum mismatch; nothing was installed.' }
+    $hasher = [Security.Cryptography.SHA256]::Create()
+    $stream = [IO.File]::OpenRead($archive)
+    try { $actual = [BitConverter]::ToString($hasher.ComputeHash($stream)).Replace('-', '').ToLowerInvariant() }
+    finally { $stream.Dispose(); $hasher.Dispose() }
+    if ($actual -ne $expected) { throw 'Download checksum mismatch; nothing was installed.' }
     $package = Join-Path $temp 'package'
     # Validate the archive's paths before extraction.
     Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -30,7 +34,7 @@ try {
             if ($entry.FullName.Replace('\', '/') -notin @('mushy.exe', 'mushy-askpass.exe', 'mushy-background.exe', 'README.md', 'LICENSE', 'docs/', 'docs/reference.md')) { throw 'Unexpected release archive entry.' }
         }
     } finally { $zip.Dispose() }
-    Expand-Archive -LiteralPath $archive -DestinationPath $package
+    [IO.Compression.ZipFile]::ExtractToDirectory($archive, $package)
     $names = @('mushy.exe', 'mushy-askpass.exe', 'mushy-background.exe')
     foreach ($name in $names) { if (!(Test-Path -LiteralPath (Join-Path $package $name) -PathType Leaf)) { throw "The release is missing $name." } }
     $stagedMushy = Join-Path $package 'mushy.exe'

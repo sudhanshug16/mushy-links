@@ -70,7 +70,9 @@ mkdir "$tmp/package"
 # Extract only the expected executable names, never arbitrary archive paths.
 tar -xzf "$tmp/$asset" -C "$tmp/package" ./mushy ./mushy-askpass ./mushy-background
 for name in mushy mushy-askpass mushy-background; do
-    [ -f "$tmp/package/$name" ] && [ ! -L "$tmp/package/$name" ] || fail "The release is missing $name."
+    if [ ! -f "$tmp/package/$name" ] || [ -L "$tmp/package/$name" ]; then
+        fail "The release is missing $name."
+    fi
     chmod 755 "$tmp/package/$name"
 done
 installed_version=$("$tmp/package/mushy" --version) || fail 'This build cannot run here. Linux releases require glibc 2.35 or newer.'
