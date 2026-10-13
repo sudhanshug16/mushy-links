@@ -21,7 +21,8 @@ into the same directory and add that directory to your PATH on each device.
 `SHA256SUMS` accompanies each release. The packaged targets are Linux x86_64,
 macOS Apple Silicon and Intel, and Windows x86_64. Linux binaries are built on
 Ubuntu 24.04; use a source build on older distributions. macOS binaries are not
-Developer ID signed or notarized.
+Developer ID signed or notarized. Windows builds statically link the C runtime
+so a separate Visual C++ runtime installation is not required.
 
 Install on every device that participates. Runtime requirements are OpenSSH and
 the binaries included with mushy; SSHFS, rsync, FUSE, Python, and a server daemon
