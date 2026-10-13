@@ -64,9 +64,8 @@ impl Store {
         Ok(Guard(f))
     }
     pub fn write_transaction(&self) -> rusqlite::Result<Transaction<'_>> {
-        // Status updates use other connections without the operation lock.
-        // Acquire SQLite's writer reservation before any transactional read,
-        // avoiding a deferred snapshot upgrade racing those updates in WAL.
+        // Reserve the SQLite writer before transactional reads, avoiding
+        // deferred snapshot upgrades racing writes from other connections.
         Transaction::new_unchecked(&self.db, TransactionBehavior::Immediate)
     }
     pub fn device(&self) -> Result<String> {
@@ -361,6 +360,12 @@ impl Store {
             params![id, value.to_string()],
         )?;
         Ok(())
+    }
+    /// Use outside an existing operation guard, so background diagnostics do
+    /// not compete continuously with filesystem/state commits for SQLite.
+    pub fn status_with_lock(&self, id: &str, state: &str, detail: &str) -> Result<()> {
+        let _guard = self.lock()?;
+        self.status(id, state, detail)
     }
     pub fn statuses(&self) -> Result<BTreeMap<String, serde_json::Value>> {
         let mut s = self.db.prepare("SELECT id,value FROM statuses")?;

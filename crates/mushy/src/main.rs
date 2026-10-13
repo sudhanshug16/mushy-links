@@ -534,7 +534,7 @@ fn link(
         runtime::start()?;
     }
     if let Err(e) = result {
-        store.status(
+        store.status_with_lock(
             &root.id,
             transport::classify(&format!("{e:#}")),
             &format!("{e:#}"),

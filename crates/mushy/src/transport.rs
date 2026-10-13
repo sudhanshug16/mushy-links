@@ -607,7 +607,11 @@ pub fn serve() -> Result<()> {
         })();
         if let Err(e) = result {
             if let Some(root) = &active {
-                let _ = store.status(&root.id, classify(&format!("{e:#}")), &format!("{e:#}"));
+                let _ = store.status_with_lock(
+                    &root.id,
+                    classify(&format!("{e:#}")),
+                    &format!("{e:#}"),
+                );
             }
             protocol::write(
                 &mut output,
@@ -652,7 +656,7 @@ pub fn worker(dir: &Path, edge: &Edge, stop: Arc<AtomicBool>) -> Result<()> {
             return Ok(());
         }
         let result: Result<()> = (|| {
-            store.status(&edge.id, "syncing", "")?;
+            store.status_with_lock(&edge.id, "syncing", "")?;
             let mut session = Session::connect_cancel(&edge.host, dir, stop.clone())?;
             ensure!(
                 session.remote_device != store.device()?,
@@ -676,14 +680,17 @@ pub fn worker(dir: &Path, edge: &Edge, stop: Arc<AtomicBool>) -> Result<()> {
                 }
                 session.sync(&store, &root, &mut watch)?;
                 backoff = 1;
-                store.status(&edge.id, "up_to_date", "")?;
+                store.status_with_lock(&edge.id, "up_to_date", "")?;
                 std::thread::sleep(Duration::from_millis(750));
             }
         })();
         if let Err(e) = result {
             let detail = format!("{e:#}");
-            store.status(&edge.id, classify(&detail), &detail)?;
-            store.status(&root.id, classify(&detail), &detail)?;
+            {
+                let _guard = store.lock()?;
+                store.status(&edge.id, classify(&detail), &detail)?;
+                store.status(&root.id, classify(&detail), &detail)?;
+            }
             let wait = Instant::now();
             let jitter = (uuid::Uuid::new_v4().as_u128() % 250) as u64;
             while wait.elapsed() < Duration::from_millis(backoff * 1000 + jitter) {

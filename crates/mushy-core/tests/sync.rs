@@ -698,10 +698,14 @@ fn unlink_survives_concurrent_background_status_updates() {
     let finished = stop.clone();
     let (ready, started) = mpsc::channel();
     let worker = std::thread::spawn(move || {
-        background.status("background", "syncing", "").unwrap();
+        background
+            .status_with_lock("background", "syncing", "")
+            .unwrap();
         ready.send(()).unwrap();
         while !finished.load(Ordering::Acquire) {
-            background.status("background", "up_to_date", "").unwrap();
+            background
+                .status_with_lock("background", "up_to_date", "")
+                .unwrap();
             std::thread::yield_now();
         }
     });
