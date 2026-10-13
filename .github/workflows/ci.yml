@@ -1,0 +1,120 @@
+name: CI
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - os: macos-15
+            target: aarch64-apple-darwin
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+          - os: windows-2025
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Linux test prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y openssh-server gnome-keyring dbus-x11 desktop-file-utils
+          sudo mkdir -p /run/sshd
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked
+      - name: Linux secure credential store
+        if: runner.os == 'Linux'
+        run: bash tests/secure_store_linux.sh
+      - name: macOS secure credential store
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          keychain="$RUNNER_TEMP/mushy-ci.keychain-db"
+          trap 'security delete-keychain "$keychain"' EXIT
+          security create-keychain -p synthetic-ci-keychain-password "$keychain"
+          security set-keychain-settings "$keychain"
+          security unlock-keychain -p synthetic-ci-keychain-password "$keychain"
+          security default-keychain -d user -s "$keychain"
+          security list-keychains -d user -s "$keychain"
+          cargo test -p mushy-links --test credentials --locked -- --ignored
+      - name: Windows secure credential store
+        if: runner.os == 'Windows'
+        run: cargo test -p mushy-links --test credentials --locked -- --ignored
+      - run: cargo build --workspace --release --locked
+      - name: Native CLI, background helpers, and login startup
+        env:
+          MUSHY_TEST_BIN: target/release/mushy
+        run: python3 tests/native_smoke.py --startup
+      - name: Real SSH integration
+        if: runner.os == 'Linux'
+        env:
+          MUSHY_TEST_BIN: target/release/mushy
+        run: python3 tests/ssh_e2e.py
+      - name: Package Unix binaries
+        if: runner.os != 'Windows'
+        env:
+          MUSHY_TARGET: ${{ matrix.target }}
+        run: |
+          mkdir package dist
+          cp target/release/mushy target/release/mushy-askpass target/release/mushy-background README.md LICENSE package/
+          tar -czf "dist/mushy-$MUSHY_TARGET.tar.gz" -C package .
+      - name: Package Windows binaries
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          MUSHY_TARGET: ${{ matrix.target }}
+        run: |
+          New-Item -ItemType Directory package,dist
+          Copy-Item target/release/mushy.exe,target/release/mushy-askpass.exe,target/release/mushy-background.exe,README.md,LICENSE package/
+          Compress-Archive -Path package/* -DestinationPath "dist/mushy-$env:MUSHY_TARGET.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mushy-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: native
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: mushy-*
+          path: dist
+          merge-multiple: true
+      - name: Validate tag and create checksums
+        env:
+          MUSHY_TAG: ${{ github.ref_name }}
+        run: |
+          python3 - "$MUSHY_TAG" <<'PY'
+          import json, subprocess, sys
+          data = json.loads(subprocess.check_output(['cargo', 'metadata', '--no-deps', '--format-version', '1']))
+          assert all('v' + p['version'] == sys.argv[1] for p in data['packages'])
+          PY
+          cd dist
+          sha256sum *.tar.gz *.zip > SHA256SUMS
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MUSHY_TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$MUSHY_TAG" dist/* --verify-tag --title "mushy $MUSHY_TAG" --notes-file "docs/releases/$MUSHY_TAG.md"
